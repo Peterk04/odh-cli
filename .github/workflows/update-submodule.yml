@@ -1,0 +1,56 @@
+name: Auto-Update Submodule
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-submodule
+  cancel-in-progress: true
+
+jobs:
+  update-submodule:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Update submodule
+        run: |
+          git submodule update --remote rhoai-upgrade-helpers
+
+      - name: Create PR if changes exist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet rhoai-upgrade-helpers; then
+            echo "Submodule is already pointing to the latest commit. Exiting."
+            exit 0
+          fi
+
+          echo "New commit found! Creating a Pull Request..."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          BRANCH_NAME="bot/update-submodule-$(date +%s)"
+          git checkout -b "$BRANCH_NAME"
+
+          git add rhoai-upgrade-helpers
+          git commit -m "chore: update rhoai-upgrade-helpers submodule"
+          git push origin "$BRANCH_NAME"
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --title "chore: auto-update rhoai-upgrade-helpers submodule" \
+            --body "Automated PR to update the \`rhoai-upgrade-helpers\` submodule. Triggered by a push to main or a manual run."
